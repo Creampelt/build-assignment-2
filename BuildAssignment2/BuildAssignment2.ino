@@ -7,25 +7,23 @@
 #define MODE 0
 
 #if MODE == 1
-#define TURN_RADIUS 9.f
-#elif MODE == 2
+#define TURN_RADIUS 8.f
+#elif MODE == 2 || MODE == 3
 #define RECT_WIDTH 12.
 #define RECT_HEIGHT 24.
-#elif MODE == 3
 // Parameters for parallel parking (change via experiment)
-#define FIRST_RADIUS 4.7
-#define ANGLE -1.044
-#define SECOND_RADIUS -1.7
-#define LAST_DISTANCE 6.f
+#define ANGLE 0.61
+#define FIRST_DISTANCE -10.51
+#define SECOND_DISTANCE 5.f
 #endif
 
 // General param - adjust for greater/lower responsiveness
 #define TIMEOUT 50
 
 // Robot measurements - determined by construction
-#define WHEEL_WIDTH 4.f
-#define MAX_RPS 1.f
-#define WHEEL_RADIUS 3.f
+#define WHEEL_WIDTH 5.5
+#define MAX_IPS 15.89
+#define WHEEL_RADIUS 1.25
 
 // Pin information - determined by wiring
 #define JOYSTICK_X A0
@@ -61,10 +59,6 @@ void setMotorPower(int posPin, int negPin, int powerPin, float power) {
   analogWrite(powerPin, (int)abs(floor(power * 255)));
 }
 
-#if MODE == 0
-int xOrigin = 0;
-int yOrigin = 0;
-
 float getRadius(float xPos, float yPos, float theta) {
   float max;
   // If on the right/left edge of rectangle, max value is determined by x
@@ -74,7 +68,7 @@ float getRadius(float xPos, float yPos, float theta) {
     max = 512 / cos(theta);
   else
     max = 512 / sin(theta);
-  return sqrt(sq(xPos) + sq(yPos)) / max;
+  return sqrt(sq(xPos) + sq(yPos)) / abs(max);
 }
 
 MicroTuple<float, float> xyToPolar(int xPos, int yPos) {
@@ -95,6 +89,8 @@ MicroTuple<float, float> xyToPolar(int xPos, int yPos) {
   float r = getRadius(adjustedX, adjustedY, theta);
   return MicroTuple<float, float>(r, theta);
 }
+
+#if MODE == 0
 
 void setRightMotor(float power, float theta) {
   float finalPower = power;
@@ -142,19 +138,24 @@ void driveByJoystick() {
 #elif MODE == 1
 
 void turnRadius(float radius) {
-  float innerRadius = radius - WHEEL_WIDTH / 2;
-  float outerRadius = radius + WHEEL_WIDTH / 2;
-  Serial.println(innerRadius / outerRadius);
-  setLeftMotorPower(1.f);
-  setRightMotorPower(innerRadius / outerRadius);
+  auto polarCoords = xyToPolar(analogRead(JOYSTICK_X), analogRead(JOYSTICK_Y));
+  if (polarCoords.get<0>() > 0.02) {
+    float outerRadius = radius + WHEEL_WIDTH;
+    setLeftMotorPower(1.f);
+    setRightMotorPower(radius / outerRadius);
+  } else {
+    setLeftMotorPower(0.f);
+    setRightMotorPower(0.f);
+  }
 }
 
-#elif MODE == 2
+#elif MODE == 2 || MODE == 3
 
 void driveDistance(float distance) {
-  long timeout = (long)1000 * distance / (PI * WHEEL_RADIUS) / MAX_RPS;
-  setRightMotorPower(1.f);
-  setLeftMotorPower(1.f);
+  long timeout = (long)abs(1000 * distance / MAX_IPS);
+  int distanceSign = distance > 0 ? 1 : -1;
+  setRightMotorPower(distanceSign);
+  setLeftMotorPower(distanceSign);
   delay(timeout);
   setRightMotorPower(0.f);
   setLeftMotorPower(0.f);
@@ -162,10 +163,10 @@ void driveDistance(float distance) {
 }
 
 void turnAngle(float theta) {
-  long timeout =
-      (long)1000 * theta * WHEEL_WIDTH / 2 / (PI * WHEEL_RADIUS) / MAX_RPS;
-  setRightMotorPower(-1.f);
-  setLeftMotorPower(1.f);
+  long timeout = (long)abs(1000 * theta * WHEEL_WIDTH / 2 / MAX_IPS);
+  int thetaSign = theta > 0 ? 1 : -1;
+  setRightMotorPower(-thetaSign);
+  setLeftMotorPower(thetaSign);
   delay(timeout);
   setRightMotorPower(0.f);
   setLeftMotorPower(0.f);
@@ -183,39 +184,11 @@ void driveRectangle(float width, float height) {
   turnAngle(PI / 2);
 }
 
-#elif MODE == 3
-
-void turnRadiusAngle(float radius, float theta) {
-  float outerRadius = abs(radius) + WHEEL_WIDTH;
-  int thetaSign = theta < 0 ? -1 : 1;
-  long timeout =
-      abs((long)1000 * theta * outerRadius / 2 / (PI * WHEEL_RADIUS) / MAX_RPS);
-  if (radius > 0) {
-    setLeftMotorPower(thetaSign);
-    setRightMotorPower(thetaSign * radius / outerRadius);
-  } else {
-    setRightMotorPower(1.f);
-    setLeftMotorPower(thetaSign * abs(radius / outerRadius));
-  }
-  delay(timeout);
-  setRightMotorPower(0.f);
-  setLeftMotorPower(0.f);
-  delay(TIMEOUT);
-}
-
-void driveDistance(float distance) {
-  long timeout = (long)1000 * distance / (PI * WHEEL_RADIUS) / MAX_RPS;
-  setRightMotorPower(1.f);
-  setLeftMotorPower(1.f);
-  delay(timeout);
-  setRightMotorPower(0.f);
-  setLeftMotorPower(0.f);
-}
-
 void parallelPark() {
-  turnRadiusAngle(FIRST_RADIUS, ANGLE);
-  turnRadiusAngle(SECOND_RADIUS, ANGLE);
-  driveDistance(LAST_DISTANCE);
+  turnAngle(-ANGLE);
+  driveDistance(FIRST_DISTANCE);
+  turnAngle(ANGLE);
+  driveDistance(SECOND_DISTANCE);
   delay(5000);
 }
 
